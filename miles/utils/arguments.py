@@ -1917,6 +1917,10 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
 
         def add_router_arguments(parser):
             parser.add_argument(
+                "--miles-router-prefix-affinity", action="store_true", default=False,
+                help="Prefer cached token prefixes in the custom Miles router, with load-aware spillover.",
+            )
+            parser.add_argument(
                 "--use-miles-router",
                 action="store_true",
                 default=False,

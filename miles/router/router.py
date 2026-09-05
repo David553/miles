@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from miles.router.config import MilesRouterConfig
+from miles.router.prefix_affinity import PrefixAffinity, request_prefixes
 from miles.utils.logging_utils import configure_logger_raw
 from miles.utils.workers.argv_utils import parse_config_argv
 
@@ -48,6 +49,11 @@ class MilesRouter:
         self.worker_failure_counts: dict[str, int] = {}
         # Quarantined workers excluded from routing pool
         self.dead_workers: set[str] = set()
+        self.prefix_affinity = PrefixAffinity(
+            max_entries=config.prefix_affinity_max_entries,
+            ttl=config.prefix_affinity_ttl,
+            max_load_skew=config.prefix_affinity_max_load_skew,
+        ) if config.prefix_affinity else None
 
         self.client = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=config.max_connections),
@@ -106,6 +112,8 @@ class MilesRouter:
                                 f"[miles-router] Worker {url} failed {threshold} consecutive health checks. Marking as DEAD."
                             )
                             self.dead_workers.add(url)
+                            if self.prefix_affinity:
+                                self.prefix_affinity.remove_worker(url)
                             # TODO (chenyang): Connect back 'dead' workers requires a mechanism to sync
                             # model versions to avoid off-policy issues from stale weights, since these
                             # dead workers' parameters may not be refitted.
@@ -136,9 +144,6 @@ class MilesRouter:
         headers: dict | None = None,
     ) -> dict:
         """Core proxy logic. Returns dict with request_body, response_body, status_code, headers."""
-        worker_url = self._use_url()
-        url = f"{worker_url}/{path}"
-
         if body is None:
             body = await request.body()
         if headers is None:
@@ -146,9 +151,25 @@ class MilesRouter:
         if body is not None:
             headers = {k: v for k, v in headers.items() if k.lower() not in ("content-length", "transfer-encoding")}
 
+        prefixes = ()
+        if self.prefix_affinity:
+            if path == "generate":
+                prefixes = request_prefixes(body)
+            elif path in {"flush_cache", "update_weights_from_disk", "update_weight_version"}:
+                self.prefix_affinity.clear()
+        epoch = self.prefix_affinity.epoch if self.prefix_affinity else 0
+        worker_url = self._use_url(prefixes)
+        url = f"{worker_url}/{path}"
+
         try:
             response = await self.client.request(request.method, url, content=body, headers=headers)
             content = await response.aread()
+            if (
+                self.prefix_affinity and response.is_success
+                and worker_url not in self.dead_workers
+                and worker_url in self.worker_request_counts
+            ):
+                self.prefix_affinity.remember(worker_url, prefixes, epoch=epoch)
             return {
                 "request_body": body,
                 "response_body": content,
@@ -207,6 +228,8 @@ class MilesRouter:
             )
 
         self.worker_request_counts.pop(worker_url, None)
+        if self.prefix_affinity:
+            self.prefix_affinity.remove_worker(worker_url)
         self.worker_failure_counts.pop(worker_url, None)
         self.dead_workers.discard(worker_url)
         logger.info(f"[miles-router] Removed worker: {worker_url}")
@@ -225,10 +248,13 @@ class MilesRouter:
         """List all registered workers"""
         return {"urls": list(self.worker_request_counts.keys())}
 
-    def _use_url(self):
+    def _use_url(self, prefixes=()):
         """Select worker URL with minimal active requests."""
 
-        if not self.dead_workers:
+        if self.prefix_affinity and prefixes:
+            loads = {w: n for w, n in self.worker_request_counts.items() if w not in self.dead_workers}
+            url = self.prefix_affinity.choose(loads, prefixes)
+        elif not self.dead_workers:
             # Healthy path: select from all workers
             url = min(self.worker_request_counts, key=self.worker_request_counts.get)
         else:

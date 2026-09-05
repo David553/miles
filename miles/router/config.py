@@ -8,6 +8,10 @@ class MilesRouterConfig(FrozenStrictBaseModel):
     timeout: float | None
     health_check_interval: float
     health_check_failure_threshold: int
+    prefix_affinity: bool = False
+    prefix_affinity_max_entries: int = 65536
+    prefix_affinity_ttl: float = 120.0
+    prefix_affinity_max_load_skew: int = 4
 
 
 def compute_miles_router_config(args, *, host: str, port: int) -> MilesRouterConfig:
@@ -23,4 +27,5 @@ def compute_miles_router_config(args, *, host: str, port: int) -> MilesRouterCon
         timeout=args.miles_router_timeout,
         health_check_interval=args.rollout_health_check_interval,
         health_check_failure_threshold=args.miles_router_health_check_failure_threshold,
+        prefix_affinity=getattr(args, "miles_router_prefix_affinity", False),
     )
