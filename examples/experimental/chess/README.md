@@ -95,6 +95,11 @@ training and two nodes for rollout generation.
 Shared-trainer PPO offloads the inactive model. Weight transfer uses the actor's
 host backup while it is offloaded; provision enough host RAM for these backups
 as well as both models' optimizer states.
+For larger models, pass `--offload-train-target disk` and
+`--offload-train-disk-dir /scratch/<run-id>/offload` through `--extra-args` to
+store inactive GPU allocations on NVMe instead of host RAM. Disk backups are
+isolated by role, cell, and rank so critic startup cannot clear actor backups.
+This does not move the CPU optimizer or weight-transfer backup to disk.
 
 The critic uses the same learning rate as the actor. PPO normalizes advantages
 and keeps reward-level KL at zero; `--kl-loss-coef` still controls the actor's
