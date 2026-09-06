@@ -92,6 +92,10 @@ they are loaded in turn, not assigned independent nodes. For example,
 `--num-nodes 3 --train-num-nodes 1 --fully-async` uses one node for actor/critic
 training and two nodes for rollout generation.
 
+Shared-trainer PPO offloads the inactive model. Weight transfer uses the actor's
+host backup while it is offloaded; provision enough host RAM for these backups
+as well as both models' optimizer states.
+
 The critic uses the same learning rate as the actor. PPO normalizes advantages
 and keeps reward-level KL at zero; `--kl-loss-coef` still controls the actor's
 loss-level KL regularization. Async PPO retains truncated importance sampling
