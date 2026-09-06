@@ -1,6 +1,6 @@
 # Chess RL with TITO v2
 
-This experimental recipe trains `Qwen3.8-27B` with GRPO on games against
+This experimental recipe trains `Qwen3.8-27B` with GRPO or PPO on games against
 Stockfish. Each game is one stateful Miles TITO v2 session. The chess harness
 owns the board, move validation, Stockfish opponent, compaction, replay journal,
 and reward; Miles owns policy serving, exact training samples, optimization,
@@ -83,6 +83,21 @@ This uses `train_async.py`, keeps rollout production running during optimizer
 updates, trains on one node, and hosts one eight-GPU SGLang engine on the other.
 Truncated importance sampling is enabled to account for policy staleness. The
 synchronous default remains colocated and continues to use `train.py`.
+
+### PPO
+
+Set `--advantage-estimator ppo` to train a learned critic instead of using
+GRPO group-relative advantages. The actor and critic share the trainer GPUs;
+they are loaded in turn, not assigned independent nodes. For example,
+`--num-nodes 3 --train-num-nodes 1 --fully-async` uses one node for actor/critic
+training and two nodes for rollout generation.
+
+The critic uses the same learning rate as the actor. PPO normalizes advantages
+and keeps reward-level KL at zero; `--kl-loss-coef` still controls the actor's
+loss-level KL regularization. Async PPO retains truncated importance sampling
+to correct for stale rollout policies. With checkpoint saving enabled, Miles
+saves the critic separately under `checkpoints_critic/`, beside the actor's
+`checkpoints/`; budget disk space for both models and their optimizer states.
 
 The launcher applies the game limit both in Miles' rollout scheduler and in the
 chess agent itself. This bounds the complete engine lifetime, not just the

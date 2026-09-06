@@ -4,7 +4,7 @@ from run import (
     ScriptArgs,
     _checkpoint_args,
     _extra_env_vars,
-    _grpo_args,
+    _rl_args,
     _misc_args,
     _optimizer_args,
     _prompt_rows,
@@ -45,7 +45,7 @@ def test_grpo_args_uses_configured_kl_loss_coefficient() -> None:
         kl_loss_coef=0.01,
     )
 
-    assert "--kl-loss-coef 0.01 " in _grpo_args(args)
+    assert "--kl-loss-coef 0.01 " in _rl_args(args)
 
 
 def test_script_args_rejects_negative_kl_loss_coefficient() -> None:
@@ -64,7 +64,7 @@ def test_grpo_args_uses_configured_repetition_reward_penalty() -> None:
         repetition_reward_penalty=0.1,
     )
 
-    assert "--repetition-reward-penalty 0.1 " in _grpo_args(args)
+    assert "--repetition-reward-penalty 0.1 " in _rl_args(args)
 
 
 def test_script_args_rejects_negative_repetition_reward_penalty() -> None:
@@ -148,7 +148,7 @@ def test_fully_async_uses_continuous_disaggregated_rollout() -> None:
 
     assert "--fully-async " in rollout_args
     assert "--pause-generation-mode in_place " in rollout_args
-    assert "--use-tis " in _grpo_args(args)
+    assert "--use-tis " in _rl_args(args)
     assert "--actor-num-nodes 1 " in misc_args
     assert "--rollout-num-gpus 8 " in misc_args
     assert "--colocate " not in misc_args
@@ -162,7 +162,7 @@ def test_synchronous_mode_remains_colocated() -> None:
     )
 
     assert "--fully-async " not in _rollout_args(args)
-    assert "--use-tis " not in _grpo_args(args)
+    assert "--use-tis " not in _rl_args(args)
     assert "--colocate " in _misc_args(args)
 
 
@@ -184,3 +184,42 @@ def test_qwen38_dense_rollout_omits_moe_and_speculative_flags() -> None:
     assert "--sglang-speculative-algorithm" not in sglang_args
     assert "--sglang-ep-size" not in sglang_args
     assert "--moe-token-dispatcher-type" not in _misc_args(args)
+
+
+@pytest.mark.parametrize("train_num_nodes", [1, 2])
+def test_async_ppo_shares_training_nodes_and_corrects_policy_staleness(train_num_nodes: int) -> None:
+    args = ScriptArgs(
+        hardware="H200",
+        num_gpus_per_node=8,
+        num_nodes=3,
+        train_num_nodes=train_num_nodes,
+        fully_async=True,
+        advantage_estimator="ppo",
+        learning_rate=3e-7,
+        kl_loss_coef=0.01,
+        repetition_reward_penalty=0.5,
+    )
+
+    rl_args = _rl_args(args)
+    placement = _misc_args(args)
+
+    assert "--advantage-estimator ppo " in rl_args
+    assert "--critic-lr 3e-07 " in rl_args
+    assert "--normalize-advantages " in rl_args
+    assert "--use-tis " in rl_args
+    assert "--use-rollout-logprobs " not in rl_args
+    assert "--offload-train " in rl_args
+    assert "--kl-coef 0 " in rl_args
+    assert "--kl-loss-coef 0.01 " in rl_args
+    assert "--repetition-reward-penalty 0.5 " in rl_args
+    assert f"--actor-num-nodes {train_num_nodes} " in placement
+    assert f"--rollout-num-gpus {(3 - train_num_nodes) * 8} " in placement
+    assert "--colocate " not in placement
+
+
+def test_grpo_default_does_not_allocate_a_critic() -> None:
+    args = ScriptArgs(hardware="H200", num_gpus_per_node=8)
+
+    assert "--advantage-estimator grpo " in _rl_args(args)
+    assert "--critic-lr " not in _rl_args(args)
+    assert "--offload-train " not in _rl_args(args)

@@ -11,6 +11,7 @@ assistant turns emitted by the chess harness.
 Args:
     run_id: Reproducible identifier for outputs and telemetry.
     learning_rate: Constant Adam learning rate used for policy updates.
+    advantage_estimator: Use GRPO group advantages or a learned PPO critic.
     kl_loss_coef: Coefficient for the low-variance KL regularization loss.
     repetition_reward_penalty: Reward subtracted once from repetitive rollouts.
     fully_async: Run rollout generation continuously on disaggregated nodes.
@@ -78,6 +79,7 @@ class ScriptArgs(U.ExecuteTrainConfig):
     rollout_max_response_len: int = 8192
     max_seq_len: int = 65536
     learning_rate: float = 1e-6
+    advantage_estimator: Literal["grpo", "ppo"] = "grpo"
     kl_loss_coef: float = 0.0
     repetition_reward_penalty: float = 0.1
     fully_async: bool = False
@@ -339,9 +341,17 @@ def _performance_args(args: ScriptArgs) -> str:
     )
 
 
-def _grpo_args(args: ScriptArgs) -> str:
+def _rl_args(args: ScriptArgs) -> str:
     tis_args = "--use-tis " if args.fully_async else ""
-    return f"--advantage-estimator grpo --use-kl-loss --kl-loss-coef {args.kl_loss_coef} --kl-loss-type low_var_kl --entropy-coef 0.00 --eps-clip 0.2 --eps-clip-high 0.28 --repetition-reward-penalty {args.repetition_reward_penalty} {tis_args}"
+    critic_args = ""
+    if args.advantage_estimator == "ppo":
+        critic_args = f"--critic-lr {args.learning_rate} --kl-coef 0 --normalize-advantages --offload-train "
+    return (
+        f"--advantage-estimator {args.advantage_estimator} "
+        f"--use-kl-loss --kl-loss-coef {args.kl_loss_coef} --kl-loss-type low_var_kl "
+        "--entropy-coef 0.00 --eps-clip 0.2 --eps-clip-high 0.28 "
+        f"--repetition-reward-penalty {args.repetition_reward_penalty} {tis_args}{critic_args}"
+    )
 
 
 def _optimizer_args(args: ScriptArgs) -> str:
@@ -391,7 +401,7 @@ def _build_train_args(args: ScriptArgs) -> str:
             _checkpoint_args(args),
             _rollout_args(args),
             _optimizer_args(args),
-            _grpo_args(args),
+            _rl_args(args),
             _observability_args(args),
             _performance_args(args),
             _sglang_args(args),
