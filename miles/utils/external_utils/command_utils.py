@@ -169,6 +169,7 @@ def execute_train(
     extra_env_vars=None,
     config: ExecuteTrainConfig | None = None,
     megatron_path: str = "/root/Megatron-LM",
+    ray_dashboard_host: str | None = None,
 ):
     if extra_env_vars is None:
         extra_env_vars = {}
@@ -200,10 +201,11 @@ def execute_train(
     )
 
     if not external_ray:
+        dashboard_args = f" --dashboard-host {shlex.quote(ray_dashboard_host)}" if ray_dashboard_host else ""
         exec_command_cpu(
             # will prevent ray from buffering stdout/stderr
             f"export PYTHONUNBUFFERED=1 && "
-            f"ray start --head --node-ip-address {master_addr} --num-gpus {num_gpus_per_node} --disable-usage-stats"
+            f"ray start --head --node-ip-address {master_addr} --num-gpus {num_gpus_per_node} --disable-usage-stats{dashboard_args}"
         )
 
     if (f := before_ray_job_submit) is not None:

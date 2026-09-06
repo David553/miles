@@ -1,9 +1,11 @@
 import pytest
 
+import miles.utils.external_utils.command_utils as U
 from run import (
     ScriptArgs,
     _checkpoint_args,
     _extra_env_vars,
+    _execute,
     _rl_args,
     _misc_args,
     _optimizer_args,
@@ -223,3 +225,22 @@ def test_grpo_default_does_not_allocate_a_critic() -> None:
     assert "--advantage-estimator grpo " in _rl_args(args)
     assert "--critic-lr " not in _rl_args(args)
     assert "--offload-train " not in _rl_args(args)
+
+
+@pytest.mark.parametrize("hostfile", [None, "/tmp/chess-test-hosts"])
+def test_ssh_launch_exposes_ray_state_api_to_workers(monkeypatch: pytest.MonkeyPatch, hostfile: str | None) -> None:
+    monkeypatch.setenv("MASTER_ADDR", "192.0.2.10")
+    monkeypatch.setenv("MILES_SCRIPT_ENABLE_RAY_SUBMIT", "0")
+    monkeypatch.delenv("MILES_SCRIPT_EXTERNAL_RAY", raising=False)
+    commands: list[str] = []
+    monkeypatch.setattr(U, "exec_command_cpu", lambda command: commands.append(command))
+    monkeypatch.setattr(U, "check_has_nvlink", lambda: True)
+
+    _execute(ScriptArgs(hardware="H200", num_gpus_per_node=8, ssh_hostfile_path=hostfile))
+
+    head_command = next(command for command in commands if "ray start --head" in command)
+    if hostfile is not None:
+        assert "--dashboard-host 0.0.0.0" in head_command
+        assert any(hostfile in command and "Starting Ray worker" in command for command in commands)
+    else:
+        assert "--dashboard-host" not in head_command

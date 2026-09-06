@@ -450,6 +450,8 @@ def _execute(args: ScriptArgs) -> None:
         megatron_path=args.megatron_path,
         extra_env_vars=_extra_env_vars(args),
         before_ray_job_submit=before_submit,
+        # Remote worker managers query the head's Ray State API.
+        ray_dashboard_host="0.0.0.0" if args.ssh_hostfile_path is not None else None,
     )
 
 

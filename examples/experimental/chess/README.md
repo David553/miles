@@ -105,6 +105,11 @@ Set `MASTER_ADDR` to the head node's IP. If node-local storage capacities differ
 pass `--extra-args "--actor-node-ip <node-ip>"` to prioritize an allocated node
 with enough checkpoint space. The default placement order is unchanged.
 
+The SSH multi-node launcher binds Ray's dashboard/State API on all interfaces
+so remote worker managers can reach it. Use a trusted private network. When
+running this recipe from a worktree, set `PYTHONPATH` to that checkout before
+invoking the script; otherwise an image-installed Miles package can shadow it.
+
 The launcher applies the game limit both in Miles' rollout scheduler and in the
 chess agent itself. This bounds the complete engine lifetime, not just the
 startup burst. Increase `--stockfish-max-concurrent-games` only after a real
