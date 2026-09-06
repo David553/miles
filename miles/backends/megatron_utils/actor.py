@@ -369,10 +369,16 @@ class MegatronTrainRayActor(TrainRayActor):
 
     @property
     def _enable_weight_backup(self) -> bool:
-        """Weight backup is only needed for CPU-side model switching or colocated tensor weight sync."""
+        """Keep host weights for model switching and weight sync while offloaded."""
         if self._weight_sync_reads_tms_backup:
             return False
-        return self.with_ref or self.with_opd_teacher or self.args.keep_old_actor or self.args.colocate
+        return (
+            self.with_ref
+            or self.with_opd_teacher
+            or self.args.keep_old_actor
+            or self.args.colocate
+            or self.args.offload_train
+        )
 
     def _switch_model(self, target_tag: str) -> None:
         if not self._enable_weight_backup:
@@ -771,7 +777,7 @@ class MegatronTrainRayActor(TrainRayActor):
         if self._weight_sync_reads_tms_backup:
             return dict(self._named_actor_weights(translate_gpu_to_cpu=True))
         # use cpu backup only when weight is not live on gpu
-        if self.args.colocate or self._active_model_tag != "actor":
+        if self.args.colocate or self._asleep or self._active_model_tag != "actor":
             return self.weights_backuper.get("actor")
         return dict(self._named_actor_weights())
 

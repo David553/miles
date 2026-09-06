@@ -666,6 +666,40 @@ def _weight_update_worker(actor_module: Any, monkeypatch: pytest.MonkeyPatch) ->
     return worker
 
 
+@pytest.mark.parametrize("asleep", [False, True])
+def test_disaggregated_weight_sync_reads_host_backup_only_when_asleep(
+    actor_module: Any, monkeypatch: pytest.MonkeyPatch, asleep: bool
+) -> None:
+    worker = _weight_update_worker(actor_module, monkeypatch)
+    worker.args.colocate = False
+    worker._asleep = asleep
+    worker._active_model_tag = "actor"
+    monkeypatch.setattr(type(worker), "_weight_sync_reads_tms_backup", property(lambda _self: False))
+    host_weights = {"weight": object()}
+    device_weights = {"weight": object()}
+    worker.weights_backuper = Mock()
+    worker.weights_backuper.get.return_value = host_weights
+    worker._named_actor_weights = Mock(return_value=device_weights.items())
+
+    assert worker._get_actor_weights() == (host_weights if asleep else device_weights)
+    assert worker.weights_backuper.get.call_count == int(asleep)
+    assert worker._named_actor_weights.call_count == int(not asleep)
+
+
+@pytest.mark.parametrize("offload_train", [False, True])
+def test_offloading_keeps_weight_backup_without_reference_model(
+    actor_module: Any, monkeypatch: pytest.MonkeyPatch, offload_train: bool
+) -> None:
+    worker = _weight_update_worker(actor_module, monkeypatch)
+    worker.args.colocate = False
+    worker.args.offload_train = offload_train
+    worker.with_ref = False
+    worker.with_opd_teacher = False
+    monkeypatch.setattr(type(worker), "_weight_sync_reads_tms_backup", property(lambda _self: False))
+
+    assert worker._enable_weight_backup is offload_train
+
+
 def _updatable_engines(rollout_engines: list[Any], snapshot: dict[str, str], gpu_count: int) -> Any:
     from miles.ray.rollout.inference_controller import UpdatableEngines
 
