@@ -48,7 +48,18 @@ class PlacementGroupInfo(NamedTuple):
     pg_reordered_gpu_ids: list[int]
 
 
-def _create_placement_group(num_gpus) -> PlacementGroupInfo:
+def _sort_bundle_infos(
+    bundle_infos: list[tuple[int, str, int]], actor_node_ip: str | None = None
+) -> list[tuple[int, str, int]]:
+    ordered = sorted(bundle_infos, key=sort_key)
+    if actor_node_ip is not None:
+        if not any(info[1] == actor_node_ip for info in ordered):
+            raise ValueError(f"Requested actor node {actor_node_ip!r} is not in the allocated GPU bundles")
+        ordered.sort(key=lambda info: info[1] != actor_node_ip)
+    return ordered
+
+
+def _create_placement_group(num_gpus, actor_node_ip: str | None = None) -> PlacementGroupInfo:
     """Create a placement group with the specified number of GPUs."""
     if num_gpus == 0:
         return None, [], []
@@ -74,7 +85,7 @@ def _create_placement_group(num_gpus) -> PlacementGroupInfo:
         ray.kill(actor)
 
     bundle_infos = [(i, gpu_ids[i][0], gpu_ids[i][1]) for i in range(num_bundles)]
-    sorted_bundle_infos = sorted(bundle_infos, key=sort_key)
+    sorted_bundle_infos = _sort_bundle_infos(bundle_infos, actor_node_ip)
     pg_reordered_bundle_indices = [info[0] for info in sorted_bundle_infos]
     # Map from logical index -> physical GPU ID
     pg_reordered_gpu_ids = [gpu_ids[info[0]][1] for info in sorted_bundle_infos]
@@ -111,7 +122,9 @@ def create_placement_groups(args) -> dict[str, PlacementGroupInfo]:
     num_gpus, rollout_offset = _get_placement_group_layout(args)
 
     logger.info(f"Creating placement group with {num_gpus} GPUs...")
-    pg, actor_pg_reordered_bundle_indices, actor_pg_reordered_gpu_ids = _create_placement_group(num_gpus)
+    pg, actor_pg_reordered_bundle_indices, actor_pg_reordered_gpu_ids = _create_placement_group(
+        num_gpus, actor_node_ip=getattr(args, "actor_node_ip", None)
+    )
 
     rollout_pg_reordered_bundle_indices = actor_pg_reordered_bundle_indices[rollout_offset:]
     rollout_pg_reordered_gpu_ids = actor_pg_reordered_gpu_ids[rollout_offset:]

@@ -41,6 +41,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -84,6 +85,7 @@ class ScriptArgs(U.ExecuteTrainConfig):
     repetition_reward_penalty: float = 0.1
     fully_async: bool = False
     train_num_nodes: int = 1
+    ssh_hostfile_path: str | None = None
 
     stockfish_elo: int = 1320
     max_model_turns: int = 8
@@ -431,6 +433,14 @@ def _prepare(args: ScriptArgs) -> None:
 
 
 def _execute(args: ScriptArgs) -> None:
+    before_submit = None
+    if args.ssh_hostfile_path is not None:
+        before_submit = partial(
+            U.ssh_start_ray_workers,
+            master_addr=os.environ["MASTER_ADDR"],
+            num_gpus_per_node=args.num_gpus_per_node,
+            hostfile=args.ssh_hostfile_path,
+        )
     U.execute_train(
         train_args=_build_train_args(args),
         config=args,
@@ -439,6 +449,7 @@ def _execute(args: ScriptArgs) -> None:
         train_script="train_async.py" if args.fully_async else "train.py",
         megatron_path=args.megatron_path,
         extra_env_vars=_extra_env_vars(args),
+        before_ray_job_submit=before_submit,
     )
 
 

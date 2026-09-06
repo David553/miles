@@ -122,6 +122,12 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
         def add_cluster_arguments(parser):
             parser.add_argument("--actor-num-nodes", type=int, default=1, help="Number of nodes for training actor")
             parser.add_argument(
+                "--actor-node-ip",
+                type=str,
+                default=None,
+                help="Prioritize this allocated Ray node for training, for example for node-local checkpoint storage.",
+            )
+            parser.add_argument(
                 "--actor-num-gpus-per-node", type=int, default=8, help="Number of gpus per node for training actor"
             )
             parser.add_argument(

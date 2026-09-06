@@ -99,6 +99,12 @@ to correct for stale rollout policies. With checkpoint saving enabled, Miles
 saves the critic separately under `checkpoints_critic/`, beside the actor's
 `checkpoints/`; budget disk space for both models and their optimizer states.
 
+For a preconfigured multi-node devbox, `--ssh-hostfile-path` joins the listed
+workers through Miles' standard SSH Ray helper before submitting the job.
+Set `MASTER_ADDR` to the head node's IP. If node-local storage capacities differ,
+pass `--extra-args "--actor-node-ip <node-ip>"` to prioritize an allocated node
+with enough checkpoint space. The default placement order is unchanged.
+
 The launcher applies the game limit both in Miles' rollout scheduler and in the
 chess agent itself. This bounds the complete engine lifetime, not just the
 startup burst. Increase `--stockfish-max-concurrent-games` only after a real

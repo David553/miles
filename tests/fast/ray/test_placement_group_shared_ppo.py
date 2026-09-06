@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from miles.ray import placement_group as placement_group_module
-from miles.ray.placement_group import _get_placement_group_layout
+from miles.ray.placement_group import _get_placement_group_layout, _sort_bundle_infos
 from miles.ray.train.group import TrainerController
 from miles.utils.workers.worker_info import WorkerInfo
 from miles.utils.workers.worker_provider.base import BaseWorkerProvider, ReconcileFn, StopWatchFn
@@ -45,6 +45,19 @@ def test_debug_train_only_counts_actor_bundles_once():
 
 def test_external_rollout_only_reserves_no_local_bundles():
     assert _get_placement_group_layout(_layout_args(debug_rollout_only=True, rollout_external=True)) == (0, 0)
+
+
+def test_actor_node_priority_preserves_gpu_and_other_node_order() -> None:
+    bundles = [(0, "192.0.2.30", 1), (1, "192.0.2.10", 0), (2, "192.0.2.30", 0), (3, "192.0.2.20", 0)]
+
+    assert [item[0] for item in _sort_bundle_infos(bundles)] == [1, 3, 2, 0]
+    assert [item[0] for item in _sort_bundle_infos(bundles, "192.0.2.30")] == [2, 0, 1, 3]
+    assert [item[0] for item in bundles] == [0, 1, 2, 3]
+
+
+def test_actor_node_priority_rejects_an_unallocated_node() -> None:
+    with pytest.raises(ValueError, match="not in the allocated GPU bundles"):
+        _sort_bundle_infos([(0, "192.0.2.10", 0)], "192.0.2.99")
 
 
 async def _noop_remote(*_args, **_kwargs):
